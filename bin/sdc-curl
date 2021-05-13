@@ -34,6 +34,14 @@ var options = [
         type: 'bool',
         help: 'just print the curl arguments, don\'t run it'
     }, {
+        names: ['sign-headers'],
+        type: 'string',
+        help: 'extra headers to sign'
+    }, {
+        names: ['request-target'],
+        type: 'string',
+        help: 'set request-target to sign'
+    }, {
         names: ['help', 'h'],
         type: 'bool',
         help: 'print this help and exit'
@@ -80,19 +88,34 @@ if (require.main === module) {
 
     var args = opts._args.slice();
 
-    var dateHeader = 'date: ' + new Date().toUTCString();
+    var headers = ['date'];
+    var headerVals = ['date: ' + new Date().toUTCString()];
+    (opts.sign_headers || '').split(/[ ]*;[ ]*/g).forEach(function (hdr) {
+            var m = hdr.match(/^([^:]+):[ ]*(.+)$/);
+            if (!m) return;
+            headers.push(m[1].toLowerCase());
+            headerVals.push(m[1].toLowerCase() + ': ' + m[2]);
+    });
+    var otherVals = [];
+    if (opts.request_target) {
+        headers.push('(request-target)');
+        otherVals.push('(request-target): ' + opts.request_target);
+    }
+    var signingString = headerVals.concat(otherVals).join('\n');
 
-    sign(dateHeader, function (err, obj) {
+    sign(signingString, function (err, obj) {
         if (err)
             throw (err);
 
         var authz = sprintf(
-            'Signature keyId="/%s/keys/%s",headers="date",' +
+            'Signature keyId="/%s/keys/%s",headers="%s",' +
             'algorithm="%s",signature="%s"',
-            obj.user, obj.keyId, obj.algorithm, obj.signature);
+            obj.user, obj.keyId, headers.join(' '), obj.algorithm, obj.signature);
 
-        args.push('-H');
-        args.push(dateHeader);
+        headerVals.forEach(function (hdr) {
+            args.push('-H');
+            args.push(hdr);
+        });
         args.push('-H');
         args.push('Authorization: ' + authz);
 
