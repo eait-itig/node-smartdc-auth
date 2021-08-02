@@ -8,6 +8,7 @@ var bunyan = require('bunyan');
 var spawn = require('child_process').spawn;
 var auth = require('../lib/index');
 var sprintf = require('util').format;
+var URL = require('url').URL;
 
 var options = [
     {
@@ -97,9 +98,62 @@ if (require.main === module) {
             headerVals.push(m[1].toLowerCase() + ': ' + m[2]);
     });
     var otherVals = [];
-    if (opts.request_target) {
+    var url;
+    opts._args.forEach(function (arg) {
+        try {
+            var u = new URL(arg);
+            if (u.protocol === 'https:' || u.protocol === 'http:')
+                url = u;
+        } catch (e) {
+            // nothing
+        }
+    });
+    var method = 'get';
+    var state = 'none';
+    opts._args.forEach(function (arg) {
+        if (state === 'method') {
+            method = arg.toLowerCase();
+            state = 'none';
+            return;
+
+        }
+        if (arg.indexOf('-X') === 0) {
+            if (arg.slice(2) === '') {
+                state = 'method';
+                return;
+            }
+            method = arg.slice(2).toLowerCase();
+            return;
+        }
+        if (arg === '--request') {
+            state = 'method';
+            return;
+        }
+        if (arg.indexOf('-T') === 0 || arg.indexOf('--upload-file') === 0) {
+            method = 'put';
+            return;
+        }
+        if (arg.indexOf('-F') === 0 || arg.indexOf('--form') === 0) {
+            method = 'post';
+            return;
+        }
+        if (arg.indexOf('-') === 0 && arg.indexOf('I') !== -1) {
+            method = 'head';
+            return;
+        }
+    });
+    if (url && headers.indexOf('host') === -1) {
+        headers.push('host');
+        headerVals.push('host: ' + url.host);
+    }
+    if (opts.request_target || url) {
         headers.push('(request-target)');
-        otherVals.push('(request-target): ' + opts.request_target);
+        if (opts.request_target) {
+            otherVals.push('(request-target): ' + opts.request_target);
+        } else if (url) {
+            otherVals.push('(request-target): ' + method + ' ' +
+                url.pathname + url.search);
+        }
     }
     var signingString = headerVals.concat(otherVals).join('\n');
 
